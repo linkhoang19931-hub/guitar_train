@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using UnityEngine;
 
@@ -195,15 +196,52 @@ public static class StringTheoryPlatform
 
     private static bool TryPickMacFolder(string title, string initialDirectory, out string selectedPath)
     {
+        string prompt = EscapeAppleScriptString(string.IsNullOrWhiteSpace(title) ? "Select Folder" : title);
+        string script = $"POSIX path of (choose folder with prompt \"{prompt}\"";
+        if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+            script += $" default location POSIX file \"{EscapeAppleScriptString(initialDirectory)}\"";
+        script += ")";
+
+        if (!TryRunMacChooser(script, "folder", out selectedPath))
+            return false;
+
+        if (selectedPath.EndsWith("/", StringComparison.Ordinal) && selectedPath.Length > 1)
+            selectedPath = selectedPath.TrimEnd('/');
+
+        return true;
+    }
+
+    // filterPattern uses the Windows style "*.gp;*.gp5;*.stchart.json"; "*" or "*.*" means any file.
+    public static bool TryPickMacFile(string title, string filterPattern, string initialDirectory, out string selectedPath)
+    {
+        string prompt = EscapeAppleScriptString(string.IsNullOrWhiteSpace(title) ? "Select File" : title);
+        string script = $"POSIX path of (choose file with prompt \"{prompt}\"";
+
+        string[] extensions = (filterPattern ?? string.Empty)
+            .Split(';')
+            .Select(pattern => pattern.Trim())
+            .Select(pattern => pattern.Substring(pattern.LastIndexOf('.') + 1))
+            .Where(extension => extension.Length > 0 && extension != "*")
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        bool allowsAnyFile = (filterPattern ?? string.Empty)
+            .Split(';')
+            .Any(pattern => pattern.Trim() == "*" || pattern.Trim() == "*.*");
+        if (extensions.Length > 0 && !allowsAnyFile)
+            script += " of type {" + string.Join(", ", extensions.Select(extension => $"\"{EscapeAppleScriptString(extension)}\"")) + "}";
+
+        if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
+            script += $" default location POSIX file \"{EscapeAppleScriptString(initialDirectory)}\"";
+        script += ")";
+
+        return TryRunMacChooser(script, "file", out selectedPath);
+    }
+
+    private static bool TryRunMacChooser(string script, string kind, out string selectedPath)
+    {
         selectedPath = string.Empty;
         try
         {
-            string prompt = EscapeAppleScriptString(string.IsNullOrWhiteSpace(title) ? "Select Folder" : title);
-            string script = $"POSIX path of (choose folder with prompt \"{prompt}\"";
-            if (!string.IsNullOrWhiteSpace(initialDirectory) && Directory.Exists(initialDirectory))
-                script += $" default location POSIX file \"{EscapeAppleScriptString(initialDirectory)}\"";
-            script += ")";
-
             using Process process = Process.Start(new ProcessStartInfo
             {
                 FileName = "osascript",
@@ -223,14 +261,11 @@ public static class StringTheoryPlatform
                 return false;
 
             selectedPath = (output ?? string.Empty).Trim();
-            if (selectedPath.EndsWith("/", StringComparison.Ordinal) && selectedPath.Length > 1)
-                selectedPath = selectedPath.TrimEnd('/');
-
             return !string.IsNullOrWhiteSpace(selectedPath);
         }
         catch (Exception ex)
         {
-            UnityEngine.Debug.LogWarning($"[Platform] macOS folder picker failed: {ex.Message}");
+            UnityEngine.Debug.LogWarning($"[Platform] macOS {kind} picker failed: {ex.Message}");
             selectedPath = string.Empty;
             return false;
         }

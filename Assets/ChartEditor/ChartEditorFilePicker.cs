@@ -95,7 +95,7 @@ public static class ChartEditorFilePicker
         path = selected;
         return true;
 #else
-        return WindowsFolderPicker.TryPickFolder(title, resolvedInitialDirectory, out path);
+        return StringTheoryPlatform.TryPickFolder(title, resolvedInitialDirectory, out path);
 #endif
     }
 
@@ -149,6 +149,8 @@ public static class ChartEditorFilePicker
         return true;
 #elif UNITY_STANDALONE_WIN
         return TryPickWindowsFile(title, filterName, filterPattern, resolvedInitialDirectory, out path);
+#elif UNITY_STANDALONE_OSX
+        return StringTheoryPlatform.TryPickMacFile(title, filterPattern, resolvedInitialDirectory, out path);
 #else
         Debug.LogWarning("[ChartEditor] File picker is not implemented for this platform.");
         return false;
